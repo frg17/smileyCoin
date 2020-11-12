@@ -13,6 +13,7 @@
 #include "richlistdb.h"
 #include "servicelistdb.h"
 #include "serviceitemlistdb.h"
+#include "jeeq.h"
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "OCDFAInspection"
 #ifdef ENABLE_WALLET
@@ -1191,6 +1192,60 @@ Value verifymessage(const Array& params, bool fHelp)
         return false;
 
     return (pubkey.GetID() == keyID);
+}
+
+Value sendcodedmessage(const Array &params, bool fHelp)
+{
+	if (fHelp || params.size() != 2)
+		throw runtime_error(
+			"sendcodedmessage \"smileycoinaddress\" \"signature\" \"message\"\n"
+			"\nVerify a signed message\n"
+			"\nArguments:\n"
+			"1. \"smileycoinaddress\"  (string, required) The smileycoin address to use for the signature.\n"
+			"2. \"signature\"          (string, required) The signature provided by the signer in base 64 encoding (see signmessage).\n"
+			"3. \"message\"            (string, required) The message that was signed.\n"
+			"\nResult:\n"
+			"true|false   (boolean) If the signature is verified or not.\n"
+			"\nExamples:\n"
+			"\nUnlock the wallet for 30 seconds\n" +
+			HelpExampleCli("walletpassphrase", "\"mypassphrase\" 30") +
+			"\nCreate the signature\n" + HelpExampleCli("signmessage", "\"1D1ZrZNe3JUo7ZycKEYQQiQAWd9y54F4XZ\" \"my message\"") +
+			"\nVerify the signature\n" + HelpExampleCli("verifymessage", "\"1D1ZrZNe3JUo7ZycKEYQQiQAWd9y54F4XZ\" \"signature\" \"my message\"") +
+			"\nAs json rpc\n" + HelpExampleRpc("verifymessage", "\"1D1ZrZNe3JUo7ZycKEYQQiQAWd9y54F4XZ\", \"signature\", \"my message\""));
+
+
+	string strPubKeyHex = params[0].get_str();
+	string strMessage = params[1].get_str();
+
+	if (!IsHex(strPubKeyHex))
+		throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Not a valid hex format for public key");
+
+	const CPubKey pubKey(ParseHex(strPubKeyHex));
+	if ( !pubKey.IsFullyValid() )
+		throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Not a valid public key hex");
+
+	using namespace Jeeq;
+	std::vector<uint8_t> encryptedMessage = EncryptMessage(pubKey, strMessage);
+	
+	
+	CBitcoinAddress address(pubKey.GetID());
+	
+	CKeyID keyID;
+	if (!address.GetKeyID(keyID))
+        throw JSONRPCError(RPC_TYPE_ERROR, "Address does not refer to a key");
+
+	CKey vchSecret;
+	if (!pwalletMain->GetKey(keyID, vchSecret))
+        throw JSONRPCError(RPC_WALLET_ERROR, "Private key for address is not known");
+
+	Object result;
+	result.push_back(Pair("validPubKey", pubKey.IsValid()));
+	result.push_back(Pair("pubkey", strPubKeyHex));
+	result.push_back(Pair("privkey", CBitcoinSecret(vchSecret).ToString()));
+	result.push_back(Pair("message", strMessage));
+	result.push_back(Pair("address", address.ToString()));
+
+	return result;
 }
 
 #pragma clang diagnostic pop
